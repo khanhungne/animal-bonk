@@ -1,0 +1,5 @@
+node_modules/
+dist/
+*.log
+moonlight.mp3
+spiral.svg

@@ -1,0 +1,11 @@
+import * as THREE from 'three'; import type { PhysicsWorld, ContactImpact } from './PhysicsWorld'; import { AnimalState, type AnimalPartName } from '../entities/AnimalDefinition'; import type { RagdollAnimal, RagdollPart } from '../entities/RagdollAnimal'; import type { ComboSystem } from '../systems/ComboSystem';
+interface ColliderOwner { animal:RagdollAnimal;part:RagdollPart; }
+export class CollisionManager {
+  readonly secondaryKnockdownThreshold=2.8; private owners=new Map<number,ColliderOwner>();private pairCooldown=new Map<string,number>();private animals:RagdollAnimal[]=[];
+  constructor(private physics:PhysicsWorld,private combo:ComboSystem){}
+  setAnimals(animals:RagdollAnimal[]):void{this.clear();this.animals=animals;for(const animal of animals)for(const part of animal.parts.values()){this.owners.set(part.collider.handle,{animal,part});this.physics.registerImpact(part.collider,event=>this.handle(event));}}
+  private handle(event:ContactImpact):void{const a=this.owners.get(event.self),b=this.owners.get(event.other);if(!a||!b||a.animal===b.animal)return;const key=[event.self,event.other].sort((x,y)=>x-y).join(':');const now=performance.now();if((this.pairCooldown.get(key)??0)>now)return;this.pairCooldown.set(key,now+450);
+    const source=a.animal.state!==AnimalState.Idle?a:b.animal.state!==AnimalState.Idle?b:undefined;const target=source===a?b:source===b?a:undefined;if(!source||!target||target.animal.state!==AnimalState.Idle||!source.animal.chainId)return;const v=source.part.body.linvel();const speed=Math.hypot(v.x,v.y,v.z);const strength=Math.max(event.force*.018,speed*source.part.body.mass());if(strength<this.secondaryKnockdownThreshold)return;const direction=new THREE.Vector3(v.x,v.y,v.z);if(direction.lengthSq()<.1)direction.set(event.direction.x,event.direction.y,event.direction.z);direction.normalize().multiplyScalar(THREE.MathUtils.clamp(strength,2.2,7));if(target.animal.knockdown(target.part.name as AnimalPartName,direction,source.animal.chainId))this.combo.register(source.animal.chainId,`animal:${target.animal.instanceId}`,150);}
+  chainForCollider(handle:number):number|undefined{return this.owners.get(handle)?.animal.chainId;}
+  clear():void{for(const owner of this.owners.values())this.physics.unregisterImpact(owner.part.collider);this.owners.clear();this.pairCooldown.clear();this.animals=[];}
+}
